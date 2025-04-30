@@ -1,0 +1,70 @@
+body {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  background-color: #F5F5DC;
+  color: #333;
+}
+button {
+  font-family: inherit;
+  padding: 0.5em 1em;
+  margin-right: 0.5em;
+  cursor: pointer;
+}
+pre {
+  background: #fff;
+  padding: 1em;
+  overflow: auto;
+  border: 1px solid #ccc;
+}
+
+/* iOS-style Toggle Switch */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px; /* Adjust size as needed */
+  height: 24px;
+}
+
+/* Hide default HTML checkbox */
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+/* The slider */
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc; /* Default background */
+  transition: .4s;
+  border-radius: 24px; /* Make it rounded */
+}
+
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 18px; /* Size of the knob */
+  width: 18px;
+  left: 3px; /* Position of the knob */
+  bottom: 3px;
+  background-color: white;
+  transition: .4s;
+  border-radius: 50%; /* Make knob circular */
+}
+
+input:checked + .toggle-slider {
+  background-color: #2196F3; /* Active color (e.g., blue) */
+}
+
+input:focus + .toggle-slider {
+  box-shadow: 0 0 1px #2196F3;
+}
+
+input:checked + .toggle-slider:before {
+  transform: translateX(20px); /* Move knob when checked */
+}

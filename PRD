@@ -1,0 +1,212 @@
+
+Product Requirements Document: CIP2
+
+Version: 1.2 (Final)
+Date: 2025-04-29
+Author: AI Assistant (based on user conversation)
+
+Document Purpose: This document details the requirements for the CIP2 Electron application. It is intended for the development team and aims to provide exhaustive specifications to ensure the final product aligns with the user's vision. Stated assumptions and defaults are confirmed as correct.
+
+1. Introduction & Overview
+
+CIP2 is a macOS-focused (Apple Silicon optimized) Electron application providing a specialized visual interface for managing JSON data structured around Fields of Interest (FoIs) and their associated Programs. It replaces manual JSON editing with interactive, dynamic, force-directed graph visualizations and inline editing capabilities. CIP2 reads from and writes to a user-specified JSON file, employing a "last save wins" strategy for shared file scenarios. The aesthetic goal is "light academia minimalism".
+
+2. Goals
+
+Provide an intuitive, visual workflow for navigating hierarchical FoI/Program data.
+Enable efficient, inline editing of Program details and their categorization under FoIs.
+Persist inclusion/exclusion status for both FoIs and Programs within the JSON data.
+Ensure data integrity via explicit and triggered save actions with clear user feedback.
+Deliver a fluid, engaging, and aesthetically pleasing user experience through smooth animations and dynamic layouts.
+Support team collaboration on a shared JSON file ("last save wins").
+Maintain forward compatibility by gracefully handling unknown fields in the JSON schema.
+3. Target Audience & Platform
+
+Users: Internal team members maintaining the FoI/Program dataset.
+Platform: macOS (Optimized builds for Apple Silicon - M1 or later). Assumed standard macOS UI conventions where applicable.
+Rollout: Initial limited internal release.
+4. Data Model & Handling
+
+4.1. JSON Structure
+
+CIP2 operates on a JSON file structured as a single top-level object. Keys of this object are the Field of Interest names (strings), and values are FoI objects.
+
+{
+  "Mathematics": {                     // Key: String, the unique name/identifier for the FoI.
+    "included": true,                  // Boolean: FoI inclusion status. Required.
+    "population": {                    // Object: Aggregate data. Required for display logic.
+      "count": 132065,                 // Integer: Population/interest metric. Required.
+      "as_of": "2025-04-25"            // String: ISO-8601 date (YYYY-MM-DD). Required.
+    },
+    "programs": [                      // Array: List of programs. MUST be present. Can be empty.
+      {
+        "name": "Algebra Club",        // String: Official program title. Required.
+        "degree": "BS",                // String: Credential type. Can be empty/null.
+        "description": "...",          // String: Blurb. Can be empty/null.
+        "link": "https://...",         // String: Canonical URL. Required. Must be valid URL format.
+        "included": true               // Boolean: Program inclusion status. Required.
+        // CIP2 must ignore any additional unknown fields here
+      }
+      // ... additional programs ...
+    ]
+    // CIP2 must ignore any additional unknown fields here (e.g., notes, internal_id)
+  },
+  "Computer Science": {
+    "included": true,
+    "population": { /* ... */ },
+    "programs": [ /* ... */ ]
+  }
+  // ... additional FoIs (keys are the FoI names) ...
+}
+content_copy
+download
+Use code with caution.
+Json
+4.2. Schema Handling & Validation:
+
+Reading:
+Must parse the structure above. The top-level object keys are the FoI names used for display and identification.
+Must correctly read FoI.included, FoI.population.count, FoI.population.as_of, FoI.programs array, and all defined fields within each program object (name, degree, description, link, included).
+Field Requirements & Error Handling (on Load):
+Fatal Errors (Prevent Load/Display Error): Invalid JSON format; Missing programs array in any FoI object; Program object missing name, link, or included; Missing FoI.included field.
+Non-Fatal Issues (Load but potentially flag/handle gracefully): Missing FoI.population object or its fields (count, as_of) (FoI card will display "Population: N/A"); Program missing degree or description (display empty/placeholder).
+Display clear, specific error messages in the top error bar (e.g., "Error loading file: FoI 'Mathematics' program index 2 missing required 'link' field."). Be as specific as feasible.
+Forward Compatibility: Ignore unknown/extra fields encountered within FoI or Program objects without error. These fields must be preserved on save.
+Writing:
+Save operations rewrite the entire JSON file with the current application state.
+MUST preserve the original structure, including the order of FoIs (if the underlying JS object implementation maintains order, otherwise order is not guaranteed but desired) and the order of programs within each FoI.
+MUST preserve any unknown fields that were present when the file was loaded.
+Modifies only the values managed by CIP2: FoI.included, program fields (name, degree, description, link, included), and the implicit parent FoI of a program (by placing it in the correct programs array).
+FoI.population.count and FoI.population.as_of are read-only and never modified by CIP2.
+5. Key Features
+
+5.1. File Handling & Initialization
+
+File Selection: Standard macOS system dialog on launch. Remember path for session. Graceful error handling for read/parse failures (display in error bar).
+Initial State: If the selected file is empty ({}), invalid, or contains FoIs but all have empty programs arrays, display an empty graph area with a helpful message (e.g., "No programs found to display. Load a valid CIP2 data file.").
+Data Saving:
+Explicit Save: Via Save button. Enabled only when changes exist (dirty state). Keyboard shortcut: Cmd+S.
+Triggered Save: Moving a Program MUST trigger an immediate background save.
+Save Feedback: Non-blocking "Saving..." indicator in top bar during save. Replaced by brief success confirmation (e.g., "Save successful.") or error message.
+Dirty State Tracking: Any user edit (inline text, toggle flips) that isn't a program move sets the dirty state to true and enables the Save button. A successful save (explicit or triggered) resets the dirty state.
+Save on Close: Prompt "Save changes before closing?" ([Save], [Discard], [Cancel]) if dirty state is true.
+Mechanism: Efficiently overwrite the original file. Handle potential write errors (permissions, disk full) and report in error bar.
+Conflict Resolution: "Last save wins".
+5.2. Main View: Field of Interest (FoI) Graph
+
+Layout: D3.js force-directed graph. Nodes = FoI cards. Standard forces (repulsion, centering - parameters tuned for visual appeal). Adapts smoothly to window resize and card state changes. Target 60fps animation.
+Rendering: Displays only FoIs with programs.length > 0. Hidden FoIs appear if a program is moved into them.
+Background: Very light beige (#F5F5DC suggested) with a faint, uniform grid of subtle gray dots (#D3D3D3 suggested).
+Controls (Top Floating Bar): Elements float over graph. Use standard, minimalist icons (e.g., from Feather Icons or Material Symbols library).
+Elements (Right-to-Left):
+Save Button: Icon changes state (e.g., color, badge) when dirty. Tooltip: "Save Changes (Cmd+S)".
+Search Bar: Input field. Icon inside. Placeholder: "Search Fields of Interest...". Text remains until explicitly cleared by user.
+Undo Button: Icon. Tooltip: "Undo (Cmd+Z)". Disabled if no undo actions available.
+Redo Button: Icon. Tooltip: "Redo (Cmd+Shift+Z)". Disabled if no redo actions available.
+Error/Status Area: Centered, for messages like "Saving...", "Save successful.", "Error: ...". Messages should auto-dismiss after a few seconds unless critical.
+5.3. Field of Interest (FoI) Card
+
+Appearance: Darker beige rectangle (#E8E4C9 suggested), rounded corners. Consistent minimalist style.
+States & Transitions (Smoothly Animated - GSAP suggested, ~300ms duration, ease-in-out easing):
+State 1: Minimal (Default)
+Displays FoI Name (the JSON key, e.g., "Mathematics"). Ensure text wrapping or truncation with ellipsis for long names.
+Interaction: Single click -> Partially Expanded.
+State 2: Partially Expanded (Click 1)
+Animates larger.
+Displays:
+FoI Name (larger font).
+Program Count: Text like "15 Programs".
+Population Info: Text like "Population: 132,065 (<span style='color: grey;'>as of 2025-04-25</span>)". Display "Population: N/A" if data missing.
+Inclusion Toggle: Standard toggle switch linked to FoI.included.
+Controls (Top-Left - Mac Style Icons):
+Contract Button: Returns to Minimal. Tooltip: "Collapse".
+Expand Button: Transitions to Fully Expanded. Tooltip: "Expand".
+Interaction: Expand/Contract clicks. Click outside this card -> Minimal state.
+Inclusion Toggle Interaction: Updates FoI.included in state, marks dirty. Toggle Off visually dims card (e.g., opacity: 0.6), remains in layout/interactable. Toggle On restores full opacity.
+State 3: Fully Expanded (Click 2 from Partial)
+Animates to fill window viewport, maintaining context border (~5px) showing underlying graph.
+Background: Light beige with faint gray plus (+) grid.
+Header: Prominent FoI Name.
+Content: Program Graph View (see 5.4).
+Controls: Clear Contract button returns view to FoI Card's Minimal state. Tooltip: "Collapse Field of Interest View".
+5.4. Program Graph View (Inside Fully Expanded FoI Card)
+
+Layout: Second force-directed graph instance for Programs. Center point shifts based on open columns. Smoothly animates layout changes.
+Background: Light beige with faint plus (+) grid.
+Controls: Top bar remains visible/functional. Search filters Programs now. Placeholder: "Search Programs...".
+5.5. Program Card (Inside Program Graph View)
+
+Appearance: Consistent with FoI cards.
+States & Transitions (Smoothly Animated):
+State 1: Minimal (Default)
+Displays Program name. Handle text overflow gracefully (wrapping/ellipsis).
+Interaction: Single click -> Partially Expanded.
+State 2: Partially Expanded (Click 1)
+Animates slightly larger.
+Displays:
+Program name.
+Link Button: Icon. Opens link in system default browser. Tooltip: "Open Program Link".
+Inclusion Toggle: Linked to program.included.
+Controls (Top-Left): Contract/Expand buttons. Tooltips: "Collapse", "Expand Program Details".
+Interaction: Expand/Contract clicks. Click outside (on FoI view background) -> Contracts most recently expanded program card (LIFO).
+Inclusion Toggle Interaction: Updates program.included, marks dirty. Toggle Off dims card visually.
+State 3: Fully Expanded (Click 2 from Partial)
+Animates to occupy one vertical third (Left -> Middle -> Right). Max 3 open. Handles overflow/shifting as specified previously.
+Content (Inline Editable): All fields occupy space within the card's vertical third.
+Editable Text Fields (name, degree, description, link):
+Display as static text normally.
+On click, replace text with an integrated input field (input type="text", textarea for description, input type="url" for link) styled minimally (e.g., subtle background highlight or border on focus). Input displays current value.
+On Blur (focus loss) or Enter (for single-line inputs), input reverts to static text showing the new value. Changes update state and mark dirty.
+textarea for description should allow vertical resizing if possible within the column constraints, respecting overall card height.
+link input must perform basic URL validation (try { new URL(value) } catch {}) on blur/enter. Provide visual feedback (e.g., red border) if invalid, preventing state update until valid URL is entered.
+Standard Copy/Paste (Cmd+C/V) must work within these inputs.
+Inclusion Toggle: Visible/Functional.
+Parent FoI Dropdown: Standard dropdown.
+Label: "Field of Interest:".
+Options: Dynamically populated list of all FoI Names (JSON keys) from the loaded data, sorted alphabetically.
+Interaction: Changing selection updates parent FoI, marks dirty, triggers immediate background save.
+Controls: Clear Contract button returns card to Minimal state. Tooltip: "Collapse Program Details".
+Click Outside Interaction (LIFO): Clicking FoI background contracts the last expanded program card back to Minimal.
+5.6. Search Functionality
+
+Contextual: Filters active graph (FoIs or Programs). Placeholder text updates accordingly.
+Live Filtering: Instant, case-insensitive filtering as user types. Matches against FoI Name (key) or Program name/description. Non-matches fade/animate out smoothly. Clearing input restores all.
+Performance: Must be highly performant, optimized for potentially hundreds of cards.
+Feedback: Highlight matched substring within visible cards' text.
+5.7. Undo/Redo Functionality
+
+Scope: Covers inline text edits, inclusion toggles (FoI & Program), and program moves. Must handle state restoration correctly (including dirty status and triggering saves if a 'move' is undone/redone).
+Stack: Maintain history stacks for undo/redo. Default limit: 100 actions. Enable/disable buttons based on stack state. Keyboard shortcuts: Cmd+Z, Cmd+Shift+Z.
+6. UI/UX Details
+
+Visual Style: Light Academia Minimalism. Emphasize typography, whitespace, subtle textures (grids), specified beige/gray palette. Use a consistent, high-quality minimalist icon set (e.g., Feather Icons suggested).
+Typography: Clean sans-serif (e.g., Inter). Ensure readability and appropriate visual hierarchy.
+Interactions: Click-based navigation, intuitive inline editing. Standard keyboard interactions (Enter/Blur for inputs, Cmd+S/Z/Shift+Z). Tooltips essential for icon buttons. Consider basic keyboard navigation (Tabbing, Esc).
+Copy/Paste: System-level copy/paste support required for editable text.
+External Links: Always open in default system browser.
+7. Technical Requirements & Considerations
+
+Framework: Electron.
+Platform: macOS (Apple Silicon optimized).
+Core Libraries: D3.js (Force Layout), GSAP (Animations recommended), State Management (Robust library like Redux Toolkit, Zustand, or MobX highly recommended).
+Performance: Target snappy UI responsiveness and 60fps animations. Optimize DOM manipulations, state updates, force layout calculations (use requestAnimationFrame, throttling/debouncing). Use efficient search algorithms. Ensure non-blocking I/O.
+State Management: Centralized store to handle complex interconnected state (graph layouts, card states, edits, dirty status, undo/redo history).
+Code Quality: Maintainable, well-commented code. Consider TypeScript for better type safety.
+8. Error Handling & User Feedback
+
+Display: Use top bar area for non-modal feedback (errors, status). Make messages clear and specific. Auto-dismiss informational messages.
+User Confirmation: Modal prompt for Save on Close.
+Visual Feedback: Save button state, "Saving..." indicator, search highlighting, subtle confirmation animations.
+9. Future Considerations (Out of Scope for v1.2)
+
+Bulk actions. Advanced conflict resolution. Cross-session UI state persistence (remembering expanded cards/views). Advanced search filtering. Creating/deleting FoIs or Programs. Editing FoI population data. Accessibility features (WCAG compliance). Windows/Linux support. Auto-update mechanism. Packaging/distribution strategy.
+10. Developer Clarifications & Assumptions (Confirmed)
+
+Standard macOS keyboard shortcuts (Cmd+S, Cmd+Z, etc.) are expected.
+Force layout parameters will use D3 defaults or be tuned for visual appeal during development.
+Animation timings (~300ms) and easing (ease-in-out) are try againdefaults; can be refined for optimal feel.
+UI state (expanded/collapsed cards) is not persisted across application launches.
+Error messages should be as specific as feasible.
+Search bar text persists until explicitly cleared by the user.
+
+This final version (1.2) represents the culmination of our detailed discussion and should serve as a comprehensive guide for building CIP2.
