@@ -31,7 +31,6 @@ interface AppPresentState { // Renamed original AppState
   fileData: AppData | null;
   isLoading: boolean;
   error: string | null;
-  isDirty: boolean;
   statusMessage: string | null; // Added for feedback
 }
 
@@ -41,7 +40,6 @@ const initialPresentState: AppPresentState = {
   fileData: null,
   isLoading: false,
   error: null,
-  isDirty: false,
   statusMessage: null,
 };
 
@@ -78,32 +76,26 @@ const appSlice = createSlice({
         if (action.payload) {
             state.isLoading = false;
             state.error = null;
-            state.isDirty = false;
             state.fileData = null;
             state.statusMessage = null;
         } else {
             state.fileData = null;
         }
     },
-    // --- Undoable Actions (affect fileData or isDirty) ---
+    // --- Undoable Actions (affect fileData) ---
     setFileData: (state, action: PayloadAction<AppData | null>) => {
       // This completely replaces data, should likely clear history or be initial state
       state.fileData = action.payload;
       if (action.payload !== null) {
           state.isLoading = false;
           state.error = null;
-          state.isDirty = false;
           state.statusMessage = null;
       }
-    },
-    setDirty: (state, action: PayloadAction<boolean>) => {
-        state.isDirty = action.payload;
     },
     updateFoiIncluded: (state, action: PayloadAction<{ foiName: string; included: boolean }>) => {
         const { foiName, included } = action.payload;
         if (state.fileData && state.fileData[foiName]) {
             state.fileData[foiName].included = included;
-            state.isDirty = true;
         } else {
             console.warn(`Attempted to update inclusion for non-existent FoI: ${foiName}`);
         }
@@ -115,7 +107,6 @@ const appSlice = createSlice({
             const programIndex = foi.programs.findIndex(p => p.link === programId);
             if (programIndex !== -1) {
                 foi.programs[programIndex].included = included;
-                state.isDirty = true;
             } else {
                 console.warn(`Attempted to update inclusion for non-existent program ID: ${programId} in FoI: ${foiName}`);
             }
@@ -131,7 +122,6 @@ const appSlice = createSlice({
             if (programIndex !== -1) {
                 if (field in foi.programs[programIndex]) {
                     (foi.programs[programIndex] as any)[field] = value;
-                    state.isDirty = true;
                 } else {
                      console.warn(`Attempted to update non-existent field '${field}' on program ID: ${programId} in FoI: ${foiName}`);
                 }
@@ -154,7 +144,6 @@ const appSlice = createSlice({
             if (programIndex !== -1) {
                 const [programToMove] = sourceFoi.programs.splice(programIndex, 1);
                 targetFoi.programs.push(programToMove);
-                state.isDirty = true; // Moving should mark as dirty for undo history
                 console.log(`Moved program ${programId} from ${sourceFoiName} to ${targetFoiName}`);
             } else {
                 console.warn(`Program ${programId} not found in source FoI ${sourceFoiName} for move.`);
@@ -168,7 +157,7 @@ const appSlice = createSlice({
 
 // Export actions including the new one
 export const {
-    setLoading, setError, setStatusMessage, setFilePath, setFileData, setDirty,
+    setLoading, setError, setStatusMessage, setFilePath, setFileData,
     updateFoiIncluded, updateProgramIncluded, updateProgramDetails, moveProgram
 } = appSlice.actions;
 
@@ -180,8 +169,8 @@ const undoableAppReducer = undoable(appSlice.reducer, {
     filter: excludeAction(excludedActions),
     limit: 100,
     syncFilter: true,
-    // Remove clearHistoryOnAction - handle explicitly if needed
-    // clearHistoryOnAction: (action: AnyAction) => action.type === setFileData.type, // Add type
+    // Indicate that setting initial file data should clear history
+    // clearHistoryOnAction: (action: AnyAction) => action.type === setFileData.type || action.type === setFilePath.type, // REMOVED Invalid Option
 });
 
 

@@ -1,8 +1,10 @@
-import React, { useState, Dispatch, SetStateAction, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, Dispatch, SetStateAction, useCallback, useEffect, useMemo, useRef } from 'react';
 import { ProgramNode } from './ProgramGraph';
 import { Link as LinkIcon, ChevronDown, ChevronUp } from 'react-feather'; // Changed icons
 import { useDispatch, useSelector } from 'react-redux'; // Import useDispatch and useSelector
-import { AppDispatch, ProgramData, ProgramUpdatePayload, updateProgramDetails, moveProgram, RootState, setLoading, setError, setDirty, setStatusMessage } from './store'; // Import action and types
+import { AppDispatch, ProgramData, ProgramUpdatePayload, updateProgramDetails, moveProgram, RootState, setLoading, setError, setStatusMessage } from './store'; // Import action and types - removed setDirty
+import { ActionCreators as UndoActionCreators } from 'redux-undo'; // Import undo actions
+import { gsap } from 'gsap'; // Import gsap
 import HighlightText from './HighlightText'; // Import utility
 
 // Define the type for the field being edited
@@ -21,12 +23,14 @@ interface ProgramCardProps {
 }
 
 // Define dimensions for card states
-const MINIMAL_WIDTH = 720; // 120 * 6
-const MINIMAL_HEIGHT = 240; // 40 * 6
-const PARTIAL_WIDTH = 1200; // 200 * 6
-const PARTIAL_HEIGHT = 780; // 130 * 6
-const FULL_WIDTH = 1200; // Keep width from partial for vertical feel
-const FULL_HEIGHT = 1000; // Taller for editing fields
+
+// Original dimensions
+const MINIMAL_WIDTH = 720;
+const MINIMAL_HEIGHT = 240;
+const PARTIAL_WIDTH = 1200;
+const PARTIAL_HEIGHT = 780;
+const FULL_WIDTH = 1200;
+const FULL_HEIGHT = 1000;
 
 type CardState = 'minimal' | 'partial' | 'full'; // Add 'full' state
 
@@ -35,6 +39,9 @@ const ProgramCard: React.FC<ProgramCardProps> = React.memo(({ node, parentFoiNam
   const [editingField, setEditingField] = useState<EditingField>(null);
   const [editValue, setEditValue] = useState<string>('');
   const [isLinkInvalid, setIsLinkInvalid] = useState<boolean>(false); // State for invalid URL
+  const [focusedField, setFocusedField] = useState<EditingField>(null); // Track focus for styling
+  const cardRef = useRef<HTMLDivElement>(null); // Ref for the inner div
+  const foRef = useRef<SVGForeignObjectElement>(null); // Ref for the foreignObject
 
   // Select the relevant part of the state
   const presentFileData = useSelector((state: RootState) => state.app.present.fileData);
@@ -61,6 +68,25 @@ const ProgramCard: React.FC<ProgramCardProps> = React.memo(({ node, parentFoiNam
   const currentHeight = cardState === 'minimal' ? MINIMAL_HEIGHT : cardState === 'partial' ? PARTIAL_HEIGHT : FULL_HEIGHT;
   const currentOpacity = node.data.included ? 1 : 0.6;
 
+  // --- GSAP Animation Effect --- 
+  useEffect(() => {
+    if (foRef.current) {
+        gsap.to(foRef.current, {
+            width: currentWidth,
+            height: currentHeight,
+            x: -currentWidth / 2,
+            y: -currentHeight / 2,
+            opacity: currentOpacity,
+            duration: 0.3, // PRD: ~300ms
+            ease: 'power2.inOut', // PRD: ease-in-out
+        });
+    }
+    // Animate inner div background/styles if needed
+    // if (cardRef.current) { ... }
+
+  }, [currentWidth, currentHeight, currentOpacity]);
+  // --- End GSAP Effect ---
+
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (cardState === 'minimal') {
@@ -73,11 +99,13 @@ const ProgramCard: React.FC<ProgramCardProps> = React.memo(({ node, parentFoiNam
   };
 
   const divStyle: React.CSSProperties = {
-    width: `${currentWidth}px`,
-    height: `${currentHeight}px`,
+    // width: `${currentWidth}px`, // Controlled by GSAP on foreignObject
+    // height: `${currentHeight}px`, // Controlled by GSAP on foreignObject
+    width: '100%', // Let foreignObject control size
+    height: '100%', // Let foreignObject control size
     backgroundColor: '#E8E4C9', // PRD Suggested Darker Beige (Consistent with FoI Card)
     borderRadius: '6px',
-    padding: '15px', // Increased padding
+    padding: '40px', // Padding for 4x size
     boxSizing: 'border-box',
     overflow: 'hidden',
     display: 'flex',
@@ -85,26 +113,28 @@ const ProgramCard: React.FC<ProgramCardProps> = React.memo(({ node, parentFoiNam
     justifyContent: 'center', // Default center
     alignItems: 'center', // Default center
     cursor: cardState !== 'full' ? 'pointer' : 'default', // Only pointer if not full
-    transition: 'width 0.3s ease-in-out, height 0.3s ease-in-out, opacity 0.3s ease-in-out',
+    // transition: 'width 0.3s ease-in-out, height 0.3s ease-in-out, opacity 0.3s ease-in-out', // Remove CSS transition, GSAP handles it
     boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
     color: '#333',
     textAlign: 'center',
     position: 'relative',
-    opacity: currentOpacity,
+    // opacity: currentOpacity, // Controlled by GSAP on foreignObject
     zIndex: cardState === 'full' ? 20 : cardState === 'partial' ? 10 : 1, // Bring expanded cards to front
   };
 
   const programNameStyle: React.CSSProperties = {
-    fontSize: cardState === 'minimal' ? '18px' : '22px', // Significantly Increased
+    // fontSize: cardState === 'minimal' ? '22px' : '30px', // Font size for original large size
+    fontSize: cardState === 'minimal' ? '48px' : '72px', // Font size for 4x size
     fontWeight: cardState === 'minimal' ? 'normal' : 'bold',
     whiteSpace: 'normal',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
-    WebkitLineClamp: cardState === 'minimal' ? 3 : 4, // Allow more lines
+    WebkitLineClamp: cardState === 'minimal' ? 3 : 4, // Keep line clamp same for now
     WebkitBoxOrient: 'vertical',
     display: '-webkit-box',
-    width: '100%', // Ensure text respects padding
-    marginBottom: cardState === 'partial' ? '15px' : '0', // Increased margin
+    width: '100%', 
+    // marginBottom: cardState === 'partial' ? '18px' : '0', // Margin for original large size
+    marginBottom: cardState === 'partial' ? '36px' : '0', // Margin for 4x size
   };
 
   // --- Button/Toggle Handlers ---
@@ -112,7 +142,7 @@ const ProgramCard: React.FC<ProgramCardProps> = React.memo(({ node, parentFoiNam
       background: 'rgba(255, 255, 255, 0.6)', // Semi-transparent background
       border: 'none',
       borderRadius: '50%', // Circular
-      padding: '6px', // Increased
+      padding: '16px', // Padding for 4x size
       cursor: 'pointer',
       color: '#333',
       lineHeight: 0,
@@ -155,10 +185,10 @@ const ProgramCard: React.FC<ProgramCardProps> = React.memo(({ node, parentFoiNam
   // --- Handlers for Inline Editing ---
   const handleFieldClick = (field: EditingField, currentValue: string | null | undefined) => {
     if (cardState === 'full') {
-        // Reset invalid link flag when starting to edit link
         if (field === 'link') setIsLinkInvalid(false);
         setEditingField(field);
         setEditValue(currentValue ?? '');
+        setFocusedField(field); // Set focus state
     }
   };
 
@@ -205,13 +235,17 @@ const ProgramCard: React.FC<ProgramCardProps> = React.memo(({ node, parentFoiNam
 
   const handleEditInputBlur = () => {
     commitEdit();
+    setFocusedField(null); // Clear focus state on blur
   };
 
   const handleEditInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement)) { // Enter commits single-line inputs
         commitEdit();
+        setFocusedField(null); // Clear focus on commit
     } else if (e.key === 'Escape') { // Escape cancels edit
         setEditingField(null);
+        setFocusedField(null); // Clear focus on cancel
+        setIsLinkInvalid(false); // Also clear invalid link flag on escape
     }
   };
   // --- End Inline Editing Handlers ---
@@ -234,65 +268,226 @@ const ProgramCard: React.FC<ProgramCardProps> = React.memo(({ node, parentFoiNam
       if (saveTriggeredByMove && currentFileData) {
           const saveData = async () => {
               console.log('Auto-saving due to program move...');
+              dispatch(setLoading(true)); // Show loading during save
+              dispatch(setStatusMessage('Auto-saving...'));
               const contentToSave = JSON.stringify(currentFileData, null, 2);
-              dispatch(setLoading(true));
-              dispatch(setError(null));
+              dispatch(setError(null)); // Clear previous errors
               try {
                   // We don't know the current file path here directly, call saveFile
+                  // Note: saveFile in main might update the path if it was null
                   const result = await window.electronAPI.saveFile(contentToSave);
                   if (result.error) {
                       dispatch(setError(`Auto-save failed: ${result.error}`));
+                      dispatch(setStatusMessage(null));
                   } else {
                       console.log('Auto-save successful.');
-                      // Successful save should reset dirty state - need reducer for this?
-                      // For now, assume save success implies data is no longer dirty *from this action*
-                      // dispatch(setDirty(false)); // This might be too broad
+                      dispatch(setStatusMessage('Auto-save successful.'));
+                      // Successful save should reset dirty state.
+                      dispatch(UndoActionCreators.clearHistory()); // Clear history after successful save
+                      // If saveFile returned a new path, App.tsx's handleSave logic would handle it.
+                      // We don't need to dispatch setFilePath here.
                   }
               } catch (err: any) {
-                  dispatch(setError(`Auto-save failed: ${err.message || 'Unknown error'}`));
+                dispatch(setError(`Auto-save failed: ${err.message || 'Unknown error'}`));
+                dispatch(setStatusMessage(null));
               } finally {
-                  dispatch(setLoading(false));
+                  dispatch(setLoading(false)); // Hide loading
+                  setSaveTriggeredByMove(false); // Reset the trigger flag
+                  // Clear status message after a delay
+                  setTimeout(() => dispatch(setStatusMessage(null)), 3000);
               }
           };
           saveData();
-          setSaveTriggeredByMove(false); // Reset flag
       }
-  }, [saveTriggeredByMove, currentFileData, dispatch]);
-  // --- End Save Trigger Effect ---
+  }, [saveTriggeredByMove, currentFileData, dispatch]); // Dependencies
 
-  const cardContent = (
-      <>
-        {/* Program Name */} 
-        <span
-            style={programNameStyle}
-            onClick={cardState !== 'full' ? handleClick : undefined}
-        >
-            <HighlightText text={node.data.name} highlight={searchTerm} />
-        </span>
+  // --- JSX Content Rendering ---
+  // Define content for each state
+  const minimalContent = (
+      <div style={programNameStyle}>
+          <HighlightText text={node.data.name} highlight={searchTerm} />
+      </div>
+  );
 
-        {/* Controls & Toggle (only in partial state) */} 
-        {cardState === 'partial' && (
-           <div style={{ width: '100%', position: 'relative', flexGrow: 1, marginTop: '8px' /* Increased space below name */ }}>
-                {/* Buttons Top-Left */}
-                <div style={{
-                    position: 'absolute', top: '5px', left: '5px',
-                    display: 'flex', gap: '8px', /* Increased */ zIndex: 2
-                }}>
-                    {/* Contract Button (Down) */}
-                    <button onClick={handleContractClick} title="Collapse" style={iconButtonStyle}><ChevronDown size={24} /* Increased */ /></button>
-                    {/* Expand Button (Up) */}
-                    <button onClick={handleExpandClick} title="Expand Program Details" style={iconButtonStyle}><ChevronUp size={24} /* Increased */ /></button>
-                    {/* Link Button */} 
-                    <button onClick={handleLinkClick} title="Open Program Link" style={iconButtonStyle}><LinkIcon size={24} /* Increased */ /></button>
+  const partialContent = (
+    <>
+        <div style={programNameStyle}>
+          <HighlightText text={node.data.name} highlight={searchTerm} />
+        </div>
+        {/* Show degree only if it exists */}
+        {node.data.degree && (
+          // <div style={{ fontSize: '22px', fontStyle: 'italic', color: '#555', marginBottom: '15px' }}> {/* Font size for original large size */} 
+          <div style={{ fontSize: '40px', fontStyle: 'italic', color: '#555', marginBottom: '30px' }}> {/* Font size for 4x size */} 
+            <HighlightText text={node.data.degree} highlight={searchTerm} />
+          </div>
+        )}
+        <div style={{
+            // fontSize: '20px', // Font size for original large size
+            fontSize: '40px', // Font size for 4x size
+            textAlign: 'left',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            width: '100%',
+            // maxHeight: '350px', // Height limit for original large size
+            maxHeight: '700px', // Height limit for 4x size
+            display: '-webkit-box',
+            // WebkitLineClamp: 12, // Line limit for original large size
+            WebkitLineClamp: 15, // Line limit for 4x size
+            WebkitBoxOrient: 'vertical',
+            color: '#444', 
+            marginTop: 'auto', 
+            // marginBottom: '20px', // Space for original large size
+            marginBottom: '40px', // Space for 4x size
+            // padding: '0 12px', // Padding for original large size
+            padding: '0 24px', // Padding for 4x size
+        }}>
+          <HighlightText text={node.data.description ?? ''} highlight={searchTerm} />
+        </div>
+    </>
+);
+
+
+const fullContent = (
+    // <div style={{...fullContentStyle, fontSize: '22px'}}> {/* Base font size for original large size */} 
+    <div style={{...fullContentStyle, fontSize: '44px'}}> {/* Base font size for 4x size */} 
+        {/* Program Name (Included in main div, not repeated here) */}
+
+        {/* Degree */}
+        <div style={fieldRowStyle}>
+            <label style={fieldLabelStyle}>Degree:</label>
+            {editingField === 'degree' ? (
+                <input
+                    type="text"
+                    value={editValue}
+                    onChange={handleEditInputChange}
+                    onBlur={handleEditInputBlur}
+                    onKeyDown={handleEditInputKeyDown}
+                    onFocus={() => setFocusedField('degree')} // Set focus state
+                    style={{
+                        ...inlineInputStyleBase,
+                        flexGrow: 1,
+                        // Subtle background change on focus
+                        backgroundColor: focusedField === 'degree' ? '#F8F8F0' : inlineInputStyleBase.backgroundColor,
+                    }}
+                    autoFocus
+                />
+            ) : (
+                <span style={fieldValueStyle} onClick={() => handleFieldClick('degree', node.data.degree)} title="Click to edit degree">
+                    {node.data.degree || <i style={{color: '#999'}}>None</i>}
+                </span>
+            )}
+        </div>
+
+        {/* Description */}
+        <div style={{...fieldRowStyle, alignItems: 'flex-start' }}>
+            <label style={fieldLabelStyle}>Desc:</label>
+            {editingField === 'description' ? (
+                <textarea
+                    value={editValue}
+                    onChange={handleEditInputChange}
+                    onBlur={handleEditInputBlur}
+                    onKeyDown={handleEditInputKeyDown}
+                    onFocus={() => setFocusedField('description')} // Set focus state
+                    style={inlineTextAreaStyleBase}
+                    rows={5} // Increased rows
+                    autoFocus
+                />
+            ) : (
+                <span style={{...fieldValueStyle, whiteSpace: 'pre-wrap', overflowY: 'auto'}} onClick={() => handleFieldClick('description', node.data.description)} title="Click to edit description">
+                     <HighlightText text={node.data.description || ''} highlight={searchTerm} />
+                     {!node.data.description && <i style={{color: '#999'}}>None</i>}
+                </span>
+            )}
+        </div>
+
+         {/* Link */}
+         <div style={fieldRowStyle}>
+            <label style={fieldLabelStyle}>Link:</label>
+            {editingField === 'link' ? (
+                <input
+                    type="url"
+                    value={editValue}
+                    onChange={handleEditInputChange}
+                    onBlur={handleEditInputBlur}
+                    onKeyDown={handleEditInputKeyDown}
+                    onFocus={() => setFocusedField('link')} // Set focus state
+                    style={{
+                        ...inlineInputStyleBase,
+                        flexGrow: 1,
+                        // Subtle background change on focus, but red border takes priority if invalid
+                        backgroundColor: focusedField === 'link' && !isLinkInvalid ? '#F8F8F0' : inlineInputStyleBase.backgroundColor,
+                        borderColor: isLinkInvalid ? 'red' : (focusedField === 'link' ? '#888' : inlineInputStyleBase.borderColor), // Slightly darker border on focus if not invalid
+                    }}
+                    autoFocus
+                />
+            ) : (
+                <span style={{...fieldValueStyle, wordBreak: 'break-all'}} onClick={() => handleFieldClick('link', node.data.link)} title="Click to edit link">
+                     {node.data.link}
+                </span>
+            )}
+        </div>
+
+        {/* Parent FoI Dropdown */}
+        <div style={fieldRowStyle}>
+            <label style={fieldLabelStyle} htmlFor={`foi-select-${node.id}`}>FoI:</label>
+            <select
+                id={`foi-select-${node.id}`}
+                value={foiName}
+                onChange={handleFoiDropdownChange}
+                style={selectStyle}
+                title="Change Field of Interest"
+            >
+                {allFoiNames.map(name => (
+                    <option key={name} value={name}>
+                        {name}
+                    </option>
+                ))}
+            </select>
+        </div>
+    </div>
+);
+  // END of content definitions
+
+  return (
+    <foreignObject
+      ref={foRef} 
+      x={-MINIMAL_WIDTH / 2} 
+      y={-MINIMAL_HEIGHT / 2}
+      width={MINIMAL_WIDTH}
+      height={MINIMAL_HEIGHT}
+      style={{ opacity: node.data.included ? 1 : 0.6 }} 
+      onClick={(e) => e.stopPropagation()} 
+    >
+      <div style={divStyle} onClick={handleClick} ref={cardRef}>
+        {/* Render the specific content based on state */}
+        {cardState === 'minimal' && minimalContent}
+        {cardState === 'partial' && partialContent}
+        {cardState === 'full' && fullContent}
+
+        {/* Buttons & Toggle remain common for partial/full states */}
+        {(cardState === 'partial' || cardState === 'full') && (
+            <>
+                {/* --- Top Left Buttons (Contract/Expand) --- */}
+                <div style={{ position: 'absolute', top: '20px', left: '20px', display: 'flex', gap: '16px', zIndex: 5 }}> 
+                    <button onClick={handleContractClick} title={cardState === 'full' ? "Collapse to Partial" : "Collapse to Minimal"} style={iconButtonStyle}>
+                        <ChevronDown size={48} /> 
+                    </button>
+                    {cardState === 'partial' && (
+                        <button onClick={handleExpandClick} title="Expand to Full" style={iconButtonStyle}>
+                            <ChevronUp size={48} /> 
+                        </button>
+                    )}
                 </div>
-
-                {/* Toggle Bottom-Right */}
-                <div style={{
-                    position: 'absolute', bottom: '5px', right: '5px',
-                    display: 'flex', alignItems: 'center', zIndex: 2
-                 }}>
-                    <span style={{ fontSize: '16px', /* Increased */ marginRight: '8px', color: '#555' }}>Included</span>
-                    <label className="toggle-switch" style={{ transform: 'scale(1.5)' /* Scale toggle */ }}>
+                {/* --- Top Right Link --- */}
+                <button onClick={handleLinkClick} title="Open Program Link" style={{ ...iconButtonStyle, position: 'absolute', top: '20px', right: '20px', zIndex: 5 }}> 
+                    <LinkIcon size={48} /> 
+                </button>
+                {/* --- Bottom Right Toggle --- */}
+                <div style={{ position: 'absolute', bottom: '20px', right: '20px', display: 'flex', alignItems: 'center', zIndex: 5 }}> 
+                    {/* <span style={{ fontSize: '36px', marginRight: '20px', color: '#555' }}>Included</span> */} 
+                    <span style={{ fontSize: '32px', marginRight: '15px', color: '#555' }}>Included</span> {/* Adjusted font size/margin */} 
+                    {/* <label className="toggle-switch" style={{ transform: 'scale(2.5)' }}> */} 
+                    <label className="toggle-switch" style={{ transform: 'scale(2.0)' }}> {/* Adjusted scale */} 
                         <input
                             type="checkbox"
                             checked={node.data.included}
@@ -301,115 +496,9 @@ const ProgramCard: React.FC<ProgramCardProps> = React.memo(({ node, parentFoiNam
                         <span className="toggle-slider"></span>
                     </label>
                 </div>
-            </div>
+            </>
         )}
-
-        {/* Full Expansion Content */}
-        {cardState === 'full' && (
-            <div style={fullContentStyle}>
-                {/* Degree */}
-                <div style={fieldRowStyle}>
-                    <label style={fieldLabelStyle}>Degree:</label>
-                    {editingField === 'degree' ? (
-                        <input
-                            type="text"
-                            value={editValue}
-                            onChange={handleEditInputChange}
-                            onBlur={handleEditInputBlur}
-                            onKeyDown={handleEditInputKeyDown}
-                            style={{...inlineInputStyle, flexGrow: 1}} // Allow input to grow
-                            autoFocus
-                        />
-                    ) : (
-                        <span style={fieldValueStyle} onClick={() => handleFieldClick('degree', node.data.degree)} title="Click to edit degree">
-                            {node.data.degree || <i style={{color: '#999'}}>None</i>}
-                        </span>
-                    )}
-                </div>
-
-                {/* Description - Highlight if not editing */}
-                <div style={{...fieldRowStyle, alignItems: 'flex-start' }}>
-                    <label style={fieldLabelStyle}>Desc:</label>
-                    {editingField === 'description' ? (
-                        <textarea
-                            value={editValue}
-                            onChange={handleEditInputChange}
-                            onBlur={handleEditInputBlur}
-                            onKeyDown={handleEditInputKeyDown} // Escape works, Enter adds newline
-                            style={inlineTextAreaStyle}
-                            rows={3} // Start with a few rows
-                            autoFocus
-                        />
-                    ) : (
-                        <span style={{...fieldValueStyle, whiteSpace: 'pre-wrap', maxHeight: '60px', overflowY: 'auto'}} onClick={() => handleFieldClick('description', node.data.description)} title="Click to edit description">
-                             <HighlightText text={node.data.description || ''} highlight={searchTerm} />
-                             {!node.data.description && <i style={{color: '#999'}}>None</i>}
-                        </span>
-                    )}
-                </div>
-
-                 {/* Link */}
-                 <div style={fieldRowStyle}>
-                    <label style={fieldLabelStyle}>Link:</label>
-                    {editingField === 'link' ? (
-                        <input
-                            type="url" // Use URL type for basic browser validation hint
-                            value={editValue}
-                            onChange={handleEditInputChange}
-                            onBlur={handleEditInputBlur} // Validation happens on commit
-                            onKeyDown={handleEditInputKeyDown}
-                            style={{
-                                ...inlineInputStyle,
-                                flexGrow: 1,
-                                borderColor: isLinkInvalid ? 'red' : '#aaa', // Apply red border if invalid
-                            }}
-                            autoFocus
-                        />
-                    ) : (
-                        <span style={{...fieldValueStyle, wordBreak: 'break-all'}} onClick={() => handleFieldClick('link', node.data.link)} title="Click to edit link">
-                             {node.data.link}
-                        </span>
-                    )}
-                </div>
-
-                {/* Parent FoI Dropdown */}
-                <div style={fieldRowStyle}>
-                    <label style={fieldLabelStyle} htmlFor={`foi-select-${node.id}`}>FoI:</label>
-                    <select
-                        id={`foi-select-${node.id}`}
-                        value={foiName} // Current parent FoI
-                        onChange={handleFoiDropdownChange}
-                        style={selectStyle}
-                        title="Change Field of Interest"
-                    >
-                        {allFoiNames.map(name => (
-                            <option key={name} value={name}>
-                                {name}
-                            </option>
-                        ))}
-                    </select>
-                </div>
-            </div>
-        )}
-      </>
-  );
-
-  const cardDiv = React.createElement(
-    'div',
-    { style: divStyle, xmlns: "http://www.w3.org/1999/xhtml", onClick: handleClick },
-    cardContent
-  );
-
-  return (
-    <foreignObject
-      x={-currentWidth / 2}
-      y={-currentHeight / 2}
-      width={currentWidth}
-      height={currentHeight}
-      style={{ opacity: currentOpacity, transition: 'opacity 0.3s ease-in-out' }}
-      onClick={(e) => e.stopPropagation()} // Stop propagation on foreignObject too
-    >
-      {cardDiv}
+      </div>
     </foreignObject>
   );
 });
@@ -423,61 +512,82 @@ const toggleContainerStyle: React.CSSProperties = {
     marginTop: 'auto', // Push to bottom
     paddingTop: '4px',
 };
-const inlineInputStyle: React.CSSProperties = {
-    padding: '6px', // Increased
+const inlineInputStyleBase: React.CSSProperties = {
+    // padding: '10px', // Padding for original large size
+    padding: '20px', // Padding for 4x size
     border: '1px solid #aaa',
     borderRadius: '3px',
-    fontSize: '16px', // Increased font size
+    fontSize: 'inherit', // Inherit from fullContentStyle (now 44px)
     boxSizing: 'border-box',
-    marginLeft: '5px',
+    backgroundColor: '#FFF',
+    outline: 'none',
 };
-const inlineTextAreaStyle: React.CSSProperties = {
-    ...inlineInputStyle,
-    resize: 'vertical', // Allow vertical resize
-    minHeight: '60px', // Increased min height
-    fontFamily: 'inherit', // Match surrounding font
-    flexGrow: 1, // Allow textarea to grow
+const inlineTextAreaStyleBase: React.CSSProperties = {
+    ...inlineInputStyleBase,
+    resize: 'vertical',
+    // minHeight: '150px', // Min height for original large size
+    minHeight: '300px', // Min height for 4x size
+    fontFamily: 'inherit',
+    flexGrow: 1,
 };
 const fullContentStyle: React.CSSProperties = {
-    marginTop: '15px', // Increased
+    // marginTop: '20px', // Margin for original large size
+    marginTop: '40px', // Margin for 4x size
     width: '100%',
     borderTop: '1px solid #ccc',
-    paddingTop: '15px', // Increased
-    fontSize: '16px', // Base font size increased
+    // paddingTop: '20px', // Padding for original large size
+    paddingTop: '40px', // Padding for 4x size
     textAlign: 'left',
-    display: 'flex', // Use flex for layout
+    display: 'flex', 
     flexDirection: 'column',
-    gap: '12px', // Increased gap between fields
+    // gap: '16px', // Gap for original large size
+    gap: '32px', // Gap for 4x size
 };
 const fieldRowStyle: React.CSSProperties = {
     display: 'flex',
-    alignItems: 'center', // Align label and value/input vertically
+    alignItems: 'center', 
     width: '100%',
 };
 const fieldLabelStyle: React.CSSProperties = {
     fontWeight: 'bold',
-    marginRight: '8px', // Increased
-    flexShrink: 0, // Prevent label from shrinking
-    width: '60px', // Increased width for alignment
+    // marginRight: '15px', // Margin for original large size
+    marginRight: '30px', // Margin for 4x size
+    flexShrink: 0, 
+    // width: '150px', // Width for original large size
+    width: '300px', // Width for 4x size
     textAlign: 'right',
-    fontSize: '16px', // Increased
+    fontSize: 'inherit', 
 };
 const fieldValueStyle: React.CSSProperties = {
-    flexGrow: 1, // Allow value to take remaining space
-    cursor: 'pointer', // Indicate clickable
-    padding: '6px', // Match input padding roughly
-    border: '1px solid transparent', // Placeholder for alignment
+    flexGrow: 1, 
+    cursor: 'pointer', 
+    // padding: '10px 12px', // Padding for original large size
+    padding: '20px 24px', // Padding for 4x size
     borderRadius: '3px',
-    minHeight: '30px', // Ensure minimum height matching input (Increased)
-    boxSizing: 'border-box',
-    marginLeft: '5px',
-    fontSize: '16px', // Increased
+    // minHeight: '36px', // Min height for original large size
+    minHeight: '72px', // Min height for 4x size
+    fontSize: 'inherit', 
+    backgroundColor: 'transparent', 
+    transition: 'background-color 0.2s ease',
 };
 const selectStyle: React.CSSProperties = {
-    ...inlineInputStyle, // Base styling like input
+    ...inlineInputStyleBase,
     flexGrow: 1,
-    padding: '6px', // Adjust padding if needed
+    padding: '20px', // Padding for 4x size
     cursor: 'pointer',
+    // Add macOS-like styling
+    appearance: 'none', 
+    WebkitAppearance: 'none', 
+    MozAppearance: 'none', 
+    backgroundColor: '#F5F5F5', 
+    backgroundImage: `url('data:image/svg+xml;utf8,<svg fill="%23888888" height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><path d="M7 10l5 5 5-5z"/><path d="M0 0h24v24H0z" fill="none"/></svg>')`, 
+    backgroundRepeat: 'no-repeat',
+    backgroundPosition: 'right 15px center', 
+    backgroundSize: '20px', 
+    border: '1px solid #CCCCCC', 
+    borderRadius: '5px', 
+    paddingRight: '45px', 
+    fontSize: '20px', // Override inherited large font size
 };
 // --- End Styles ---
 

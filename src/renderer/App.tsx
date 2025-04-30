@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { Save, Search, RotateCcw, RotateCw } from 'react-feather';
 import { ActionCreators as UndoActionCreators } from 'redux-undo';
-import { RootState, AppDispatch, setLoading, setError, setFilePath, setFileData, setDirty, setStatusMessage } from './store';
+import { RootState, AppDispatch, setLoading, setError, setFilePath, setFileData, setStatusMessage } from './store';
 import FoIGraph from './FoIGraph'; // Import the new graph component
 import ExpandedFoiView from './ExpandedFoiView'; // Import the new view
 // TODO: Re-integrate or move validation logic (validateCIP2Data)
@@ -13,7 +13,7 @@ const App: React.FC = () => {
 
   // Select state from the 'present' slice of the undoable state
   const presentState = useSelector((state: RootState) => state.app.present);
-  const { filePath, fileData, isLoading, error, isDirty, statusMessage } = presentState;
+  const { filePath, fileData, isLoading, error, statusMessage } = presentState;
   // Select undo/redo history
   const canUndo = useSelector((state: RootState) => state.app.past.length > 0);
   const canRedo = useSelector((state: RootState) => state.app.future.length > 0);
@@ -32,8 +32,10 @@ const App: React.FC = () => {
         dispatch(setError("Cannot save: No file loaded."));
         return;
     }
-    if (!isDirty) {
+    if (!canUndo) {
         console.log("No changes to save.");
+        dispatch(setStatusMessage('No changes to save.')); // Give feedback
+        setTimeout(() => dispatch(setStatusMessage(null)), 3000);
         return;
     }
 
@@ -51,10 +53,10 @@ const App: React.FC = () => {
             dispatch(setError(`Save failed: ${result.error}`));
             dispatch(setStatusMessage(null)); // Clear status on error
         } else {
-            dispatch(setDirty(false)); // Handled by undoable reducer now
             if (result.filePath && result.filePath !== filePath) {
                  dispatch(setFilePath(result.filePath));
             }
+            dispatch(UndoActionCreators.clearHistory());
             dispatch(setStatusMessage('Save successful.'));
             console.log(`File saved successfully to: ${result.filePath}`);
         }
@@ -63,10 +65,9 @@ const App: React.FC = () => {
         dispatch(setStatusMessage(null));
     } finally {
         dispatch(setLoading(false));
-        // Clear status message after a delay
         setTimeout(() => dispatch(setStatusMessage(null)), 3000);
     }
-  }, [dispatch, fileData, filePath, isDirty]);
+  }, [dispatch, fileData, filePath, canUndo]);
 
   // --- Handlers for Full Expansion (moved up) ---
   const handleExpandFoi = (foiId: string) => {
@@ -101,6 +102,7 @@ const App: React.FC = () => {
       console.log('[App.tsx] Dispatching setFilePath and setFileData...');
       dispatch(setFilePath(result.filePath));
       dispatch(setFileData(result.data));
+      dispatch(UndoActionCreators.clearHistory());
       dispatch(setError(null));
     });
 
@@ -112,21 +114,20 @@ const App: React.FC = () => {
 
     // Listener for quit request from main process
     const removeQuitRequestListener = window.electronAPI.onBeforeQuitRequest(() => {
-      console.log('Received before-quit-request, checking dirty state...');
-      window.electronAPI.sendQuitResponse({ isDirty });
+      console.log('Received before-quit-request, checking dirty state (using canUndo)...');
+      window.electronAPI.sendQuitResponse({ isDirty: canUndo });
     });
 
     // Listener for save request from main process (during quit sequence)
     const removeSaveRequestListener = window.electronAPI.onRequestSave(async () => {
         console.log('Received request-save from main process.');
         try {
-            if (isDirty) {
-                await handleSave(); // Await the save operation
+            if (canUndo) {
+                await handleSave();
             } else {
-                console.log('Save requested, but not dirty. Ignoring.');
+                console.log('Save requested, but not dirty (canUndo=false). Ignoring.');
             }
         } finally {
-             // Always signal back that the save attempt (or ignore) is done
              console.log('Sending save-file-complete signal.');
              window.electronAPI.sendSaveComplete();
         }
@@ -134,13 +135,13 @@ const App: React.FC = () => {
 
     // Cleanup all listeners
     return () => {
-      // removeLoadingListener(); // Assuming these are handled correctly in previous snippet
-      // removeDataListener();
-      // removeErrorListener();
       removeQuitRequestListener();
       removeSaveRequestListener();
+      removeLoadingListener();
+      removeDataListener();
+      removeErrorListener();
     };
-  }, [dispatch, isDirty, handleSave]); // Dependencies now correct
+  }, [dispatch, canUndo, handleSave]);
 
   // --- Keyboard Shortcuts Effect ---
   useEffect(() => {
@@ -164,7 +165,7 @@ const App: React.FC = () => {
         // Save: Cmd+S or Ctrl+S
         else if ((event.metaKey || event.ctrlKey) && event.key === 's') {
             event.preventDefault();
-            if (isDirty && !isLoading) {
+            if (canUndo && !isLoading) {
                 console.log('Triggering Save via shortcut');
                 handleSave();
             }
@@ -173,18 +174,11 @@ const App: React.FC = () => {
         else if (event.key === 'Escape') {
             console.log('Escape key pressed');
             event.preventDefault();
-            // Priority: Collapse fully expanded FoI view
             if (fullyExpandedFoiId) {
                 console.log('Collapsing FoI view via Esc');
                 handleCollapseFoi();
             } else {
-                // TODO: Need way to collapse active Program card (full/partial) or FoI card (partial)
-                // This state lives in FoIGraph / ProgramGraph respectively.
-                // Requires passing down an "onEscape" handler or using context/event bus.
                  console.log('Esc pressed - Card collapse logic needed here or passed down.');
-                 // Simplest for now: Signal graphs to maybe collapse their active cards?
-                 // This is imperfect as App doesn't know *which* graph is visible.
-                 // Let's add a simple event for now.
                  window.dispatchEvent(new CustomEvent('escPressed'));
             }
         }
@@ -192,7 +186,7 @@ const App: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [dispatch, canUndo, canRedo, isDirty, isLoading, handleSave, fullyExpandedFoiId, handleCollapseFoi]); // Add dependencies
+  }, [dispatch, canUndo, canRedo, isLoading, handleSave, fullyExpandedFoiId, handleCollapseFoi]);
 
   // --- Undo/Redo Handlers ---
   const handleUndo = useCallback(() => {
@@ -248,8 +242,11 @@ const App: React.FC = () => {
             )}
             {!statusMessage && isLoading && <span style={{ color: '#555' }}>Loading...</span>}
             {!statusMessage && !isLoading && error && <span style={{ color: 'red', fontWeight: 'bold' }}>Error: {error}</span>}
-            {!statusMessage && !isLoading && !error && filePath && <span style={{ color: 'grey' }}>{filePath}</span>}
-            {!statusMessage && !isLoading && !error && !filePath && <span style={{ color: 'grey' }}>No file loaded</span>}
+            {!statusMessage && !isLoading && filePath && (
+                <span style={{ color: '#666', fontSize: '0.9em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {filePath}
+                </span>
+            )}
             {/* Display Warnings if present (and no error) */}
             {!error && warnings.length > 0 && (
                <span style={{ color: 'orange', fontStyle: 'italic' }} title={warnings.join('\n')}>
@@ -280,8 +277,8 @@ const App: React.FC = () => {
                 />
             </div>
             {/* Save Button */}
-            <button onClick={handleSave} title="Save Changes (Cmd+S)" disabled={!isDirty || isLoading} style={saveButtonStyle(isDirty && !isLoading)}>
-                <Save size={18} />
+            <button onClick={handleSave} title="Save Changes (Cmd+S)" disabled={!canUndo || isLoading} style={saveButtonStyle(canUndo && !isLoading)}>
+                <Save size={18} style={{ marginRight: '5px' }} /> Save
             </button>
          </div>
       </div>
@@ -314,18 +311,30 @@ const App: React.FC = () => {
 // --- Styles --- (moved outside component for clarity)
 const iconButtonStyle = (isActive: boolean): React.CSSProperties => ({
     background: 'none',
-    border: 'none',
-    padding: '4px',
+    border: '1px solid transparent', // No border by default
+    padding: '5px',
+    borderRadius: '4px',
     cursor: isActive ? 'pointer' : 'default',
-    display: 'flex',
+    color: isActive ? '#333' : '#aaa', // Dim if disabled
+    display: 'inline-flex',
     alignItems: 'center',
-    color: isActive ? '#555' : '#ccc', // Dim when disabled
-    opacity: isActive ? 1 : 0.5,
+    justifyContent: 'center',
+    transition: 'background-color 0.2s, border-color 0.2s',
+    // ':hover': isActive ? { // Cannot use pseudo-classes in inline styles directly
+    //     backgroundColor: 'rgba(0, 0, 0, 0.05)',
+    //     borderColor: '#ccc',
+    // } : undefined,
+    // ':disabled': { // Handled by browser default/opacity below
+    //     cursor: 'not-allowed',
+    //     opacity: 0.5,
+    // }
+    // Opacity is handled implicitly by the disabled attribute on the button element
 });
 
 const saveButtonStyle = (isActive: boolean): React.CSSProperties => ({
     ...iconButtonStyle(isActive),
-    color: isActive ? '#007AFF' : '#ccc', // Highlight when active/dirty
+    padding: '5px 10px',
+    fontWeight: 500,
 });
 
 const searchInputStyle: React.CSSProperties = {

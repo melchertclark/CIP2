@@ -104,19 +104,31 @@ const FoIGraph: React.FC<FoIGraphProps> = ({ searchTerm, onExpandClick }) => {
   useEffect(() => {
     if (!svgRef.current) return;
 
+    // Calculate collision radius based on imported PARTIAL dimensions
+    const collisionRadius = Math.hypot(PARTIAL_WIDTH, PARTIAL_HEIGHT) / 2 - 5; // Use current partial size
+
     // Initialize simulation if it doesn't exist
     if (!simulationRef.current) {
         simulationRef.current = d3.forceSimulation<FoiNode>()
-          // Attractive force
-          .force('charge', d3.forceManyBody().strength(+5)) // Positive strength = attraction
+          // Repulsive force
+          // .force('charge', d3.forceManyBody().strength(+5)) // Positive strength = attraction
+          .force('charge', d3.forceManyBody().strength(-300)) // Negative strength = repulsion
           // Centering force - Keep strong
-          .force('center', d3.forceCenter(LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2).strength(0.20)) // Slightly reduced from extreme
-          // Collision detection - Use PREVIOUS partial dimensions for spacing
-          .force('collision', d3.forceCollide().radius(Math.hypot(280, 180) / 2 - 5).strength(0.9)) // Old: PARTIAL_WIDTH=280, PARTIAL_HEIGHT=180
+          .force('center', d3.forceCenter(LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2).strength(0.40)) // Increased strength
+          // Collision detection - Use calculated radius based on PARTIAL dimensions
+          // .force('collision', d3.forceCollide().radius(Math.hypot(280, 180) / 2 - 5).strength(0.9)) // Old: PARTIAL_WIDTH=280, PARTIAL_HEIGHT=180
+          .force('collision', d3.forceCollide().radius(collisionRadius).strength(0.9)) // Use new radius
           // X/Y forces - Keep strong
           .force('x', d3.forceX(LOGICAL_WIDTH / 2).strength(0.08))
           .force('y', d3.forceY(LOGICAL_HEIGHT / 2).strength(0.08))
           .on('tick', () => {
+            // Clamp positions within bounds - Account for largest (partial) card size
+            const halfWidth = PARTIAL_WIDTH / 2;
+            const halfHeight = PARTIAL_HEIGHT / 2;
+            simulationRef.current?.nodes().forEach(node => {
+                node.x = Math.max(halfWidth, Math.min(LOGICAL_WIDTH - halfWidth, node.x ?? 0));
+                node.y = Math.max(halfHeight, Math.min(LOGICAL_HEIGHT - halfHeight, node.y ?? 0));
+            });
             // Update the state with new node positions directly from simulation ref
             setNodes([...(simulationRef.current?.nodes() || [])]);
           });
@@ -128,10 +140,12 @@ const FoIGraph: React.FC<FoIGraphProps> = ({ searchTerm, onExpandClick }) => {
     simulation.nodes(foiNodes);
 
     // Update forces - Use LOGICAL dimensions
-    // Update collision force radius as well, in case it wasn't just initialized
-    const oldCollisionRadius = Math.hypot(280, 180) / 2 - 5; // Old: PARTIAL_WIDTH=280, PARTIAL_HEIGHT=180
-    (simulation.force('collision') as d3.ForceCollide<FoiNode>).radius(oldCollisionRadius);
-    simulation.force('center', d3.forceCenter(LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2).strength(0.20));
+    // Update charge force
+    (simulation.force('charge') as d3.ForceManyBody<FoiNode>).strength(-300);
+    // Update collision force radius
+    // const oldCollisionRadius = Math.hypot(280, 180) / 2 - 5; // Old: PARTIAL_WIDTH=280, PARTIAL_HEIGHT=180
+    (simulation.force('collision') as d3.ForceCollide<FoiNode>).radius(collisionRadius); // Use new radius
+    simulation.force('center', d3.forceCenter(LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2).strength(0.40)); // Update strength here too
     simulation.force('x', d3.forceX(LOGICAL_WIDTH / 2).strength(0.08));
     simulation.force('y', d3.forceY(LOGICAL_HEIGHT / 2).strength(0.08));
 

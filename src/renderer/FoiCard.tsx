@@ -17,10 +17,10 @@ interface FoiCardProps {
 }
 
 // Define dimensions for card states
-const MINIMAL_WIDTH = 360; // 180 * 2
-const MINIMAL_HEIGHT = 120; // 60 * 2
-const PARTIAL_WIDTH = 560; // 280 * 2
-const PARTIAL_HEIGHT = 360; // 180 * 2
+const MINIMAL_WIDTH = 180; // Halved from 360
+const MINIMAL_HEIGHT = 60; // Halved from 120
+const PARTIAL_WIDTH = 280; // Halved from 560
+const PARTIAL_HEIGHT = 180; // Halved from 360
 
 const FoiCard: React.FC<FoiCardProps> = ({ node, searchTerm, isActive, setActive, onInclusionChange, onExpandRequest, onCollapseRequest }) => {
   const cardRef = useRef<HTMLDivElement>(null); // Ref for the inner div
@@ -64,7 +64,7 @@ const FoiCard: React.FC<FoiCardProps> = ({ node, searchTerm, isActive, setActive
     height: '100%',
     backgroundColor: '#E8E4C9', // PRD Suggested Darker Beige
     borderRadius: '8px',
-    padding: cardState === 'minimal' ? '8px' : '10px',
+    padding: cardState === 'minimal' ? '6px' : '8px', // Reduced padding
     boxSizing: 'border-box',
     overflow: 'hidden',
     display: 'flex',
@@ -79,10 +79,10 @@ const FoiCard: React.FC<FoiCardProps> = ({ node, searchTerm, isActive, setActive
   };
 
   const foiNameStyle: React.CSSProperties = {
-    fontSize: cardState === 'minimal' ? '20px' : '26px',
+    fontSize: cardState === 'minimal' ? '14px' : '18px', // Reduced font size
     fontWeight: 'bold',
     textAlign: 'center',
-    marginBottom: cardState === 'minimal' ? '0' : '12px',
+    marginBottom: cardState === 'minimal' ? '0' : '8px', // Reduced margin
     width: '100%',
     wordWrap: 'break-word',
     overflowWrap: 'break-word',
@@ -129,7 +129,7 @@ const FoiCard: React.FC<FoiCardProps> = ({ node, searchTerm, isActive, setActive
               <HighlightText text={node.id} highlight={searchTerm} />
           </span>
           {cardState === 'partial' && (
-              <div style={{ fontSize: '18px', marginTop: 'auto', width: '100%', position: 'relative', flexGrow: 1, padding: '10px' }}>
+              <div style={{ fontSize: '12px', marginTop: 'auto', width: '100%', position: 'relative', flexGrow: 1, padding: '5px' }}>
                   {/* --- Buttons --- */}
                   <div style={{
                       position: 'absolute',
@@ -144,20 +144,20 @@ const FoiCard: React.FC<FoiCardProps> = ({ node, searchTerm, isActive, setActive
                           title="Collapse"
                           style={iconButtonStyle}
                       >
-                          <ChevronDown size={22} />
+                          <ChevronDown size={18} />
                       </button>
                       <button
                           onClick={handleExpandClick}
                           title="Expand"
                           style={iconButtonStyle}
                       >
-                          <ChevronUp size={22} />
+                          <ChevronUp size={18} />
                       </button>
                   </div>
                   {/* --- End Buttons --- */}
 
                   {/* Content block - Increase top margin slightly */}
-                  <div style={{ fontSize: '18px', marginTop: '45px', padding: '0 8px' }}>
+                  <div style={{ fontSize: '12px', marginTop: '35px', padding: '0 8px' }}>
                     <div>{node.data.programs.length} Programs</div>
                     <div>
                         Population: {node.data.population?.count?.toLocaleString() ?? 'N/A'}
@@ -176,8 +176,8 @@ const FoiCard: React.FC<FoiCardProps> = ({ node, searchTerm, isActive, setActive
                       alignItems: 'center',
                       zIndex: 2
                    }}>
-                    <span style={{ fontSize: '16px', marginRight: '8px', color: '#555' }}>Included</span>
-                    <label className="toggle-switch" style={{ transform: 'scale(1.3)' }}>
+                    <span style={{ fontSize: '11px', marginRight: '6px', color: '#555' }}>Included</span>
+                    <label className="toggle-switch" style={{ transform: 'scale(1.1)' }}>
                         <input
                             type="checkbox"
                             checked={node.data.included}

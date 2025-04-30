@@ -96,9 +96,10 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   contentArea: {
     height: `calc(100% - ${HEADER_HEIGHT})`,
-    padding: '0',
+    padding: '0', // Reverted padding
     overflow: 'hidden',
     position: 'relative',
+    // boxSizing: 'border-box', // Remove box-sizing as padding is 0
   },
 };
 
