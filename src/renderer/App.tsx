@@ -2,11 +2,12 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { Save, Search, RotateCcw, RotateCw } from 'react-feather';
 import { ActionCreators as UndoActionCreators } from 'redux-undo';
-import { RootState, AppDispatch, setLoading, setError, setFilePath, setFileData, setStatusMessage } from './store';
-import FoIGraph from './FoIGraph'; // Import the new graph component
-import ExpandedFoiView from './ExpandedFoiView'; // Import the new view
+import { RootState, AppDispatch, setLoading, setError, setFilePath, setFileData, setStatusMessage, updatePopulations, updateFoiIncluded } from './store';
+import CollapsibleCardsView from './CollapsibleCardsView'; // Nested collapsible cards view
 // TODO: Re-integrate or move validation logic (validateCIP2Data)
 // import { validateCIP2Data } from './validate';
+
+import { parsePopulationTable, PopulationEntry } from './utils/populationParser';
 
 const App: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
@@ -19,8 +20,15 @@ const App: React.FC = () => {
   const canRedo = useSelector((state: RootState) => state.app.future.length > 0);
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [fullyExpandedFoiId, setFullyExpandedFoiId] = useState<string | null>(null); // State for full expansion
   const [warnings, setWarnings] = useState<string[]>([]); // State for load warnings
+  const [isPopDialogOpen, setPopDialogOpen] = useState(false);
+  const [popText, setPopText] = useState('');
+  const [isFoiTableDialogOpen, setFoiTableDialogOpen] = useState(false);
+  const [foiTableEntries, setFoiTableEntries] = useState<{
+    foiName: string;
+    population: number | null;
+    programs: string[];
+  }[]>([]);
 
   // Log the fileData from state on every render
   console.log('[App.tsx] Rendering - fileData from store:', fileData);
@@ -69,17 +77,94 @@ const App: React.FC = () => {
     }
   }, [dispatch, fileData, filePath, canUndo]);
 
-  // --- Handlers for Full Expansion (moved up) ---
-  const handleExpandFoi = (foiId: string) => {
-      setFullyExpandedFoiId(foiId);
-      setSearchTerm('');
-  };
 
-  const handleCollapseFoi = () => {
-      setFullyExpandedFoiId(null);
-      setSearchTerm('');
-  };
-  // --- End Handlers ---
+  const handlePopulationImport = useCallback(() => {
+    const entries = parsePopulationTable(popText);
+    if (entries.length === 0) {
+      dispatch(setStatusMessage('No valid population entries found.'));
+      setTimeout(() => dispatch(setStatusMessage(null)), 3000);
+      return;
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const updates = entries.map(({ category, count }) => ({
+      foiName: category,
+      count,
+      as_of: today,
+    }));
+    dispatch(updatePopulations(updates));
+    dispatch(setStatusMessage(`Imported population for ${updates.length} categories.`));
+    setTimeout(() => dispatch(setStatusMessage(null)), 3000);
+    setPopDialogOpen(false);
+    setPopText('');
+  }, [dispatch, popText]);
+
+  const handleShowFoiTable = useCallback(() => {
+    if (!fileData) {
+      dispatch(setStatusMessage('No data loaded.'));
+      setTimeout(() => dispatch(setStatusMessage(null)), 3000);
+      return;
+    }
+    Object.entries(fileData).forEach(([foiName, foiData]) => {
+      if (!foiData.programs || foiData.programs.length === 0) {
+        dispatch(updateFoiIncluded({ foiName, included: false }));
+      }
+    });
+    const entries = Object.entries(fileData)
+      .filter(([, foiData]) => foiData.programs && foiData.programs.length > 0)
+      .map(([foiName, foiData]) => ({
+        foiName,
+        population: foiData.population?.count ?? 0,
+        programs: foiData.programs.map(p => p.name),
+      }))
+      .sort((a, b) => (b.population ?? 0) - (a.population ?? 0));
+    setFoiTableEntries(entries);
+    setFoiTableDialogOpen(true);
+  }, [dispatch, fileData]);
+
+  const handleCopyTable = useCallback(() => {
+    const header = ['Rank', 'FOI', 'Programs'].join('\t');
+    const rows = foiTableEntries.map((entry, idx) =>
+      [idx + 1, entry.foiName, entry.programs.join('; ')].join('\t')
+    );
+    const text = [header, ...rows].join('\n');
+    navigator.clipboard.writeText(text);
+  }, [foiTableEntries]);
+
+  const handleExportToWord = useCallback(async () => {
+    if (!fileData) {
+      dispatch(setStatusMessage('No data loaded.'));
+      setTimeout(() => dispatch(setStatusMessage(null)), 3000);
+      return;
+    }
+    dispatch(setStatusMessage('Exporting FOI Word document...'));
+    const exportEntries = Object.entries(fileData)
+      // Exclude FOIs that are toggled off or have no included programs
+      .map(([foiName, foiData]) => {
+        const includedPrograms = (foiData.programs || []).filter(p => p.included);
+        return { foiName, foiData, includedPrograms };
+      })
+      .filter(({ foiData, includedPrograms }) => foiData.included && includedPrograms.length > 0)
+      .map(({ foiName, foiData, includedPrograms }) => ({
+        foiName,
+        population: foiData.population?.count ?? 0,
+        programs: includedPrograms.map(p => p.name),
+      }))
+      .sort((a, b) => (b.population ?? 0) - (a.population ?? 0));
+    try {
+      const result = await window.electronAPI.exportToWord(exportEntries);
+      if (result.error) {
+        dispatch(setError(`Export failed: ${result.error}`));
+      } else if (result.canceled) {
+        dispatch(setStatusMessage('Export cancelled.'));
+      } else {
+        dispatch(setStatusMessage(`Exported Word document to ${result.outputPath}`));
+      }
+    } catch (err: any) {
+      dispatch(setError(`Export failed: ${err.message || err}`));
+    } finally {
+      setTimeout(() => dispatch(setStatusMessage(null)), 5000);
+    }
+  }, [dispatch, fileData]);
 
   // --- IPC Listeners Effect ---
   useEffect(() => {
@@ -174,19 +259,13 @@ const App: React.FC = () => {
         else if (event.key === 'Escape') {
             console.log('Escape key pressed');
             event.preventDefault();
-            if (fullyExpandedFoiId) {
-                console.log('Collapsing FoI view via Esc');
-                handleCollapseFoi();
-            } else {
-                 console.log('Esc pressed - Card collapse logic needed here or passed down.');
-                 window.dispatchEvent(new CustomEvent('escPressed'));
-            }
+            window.dispatchEvent(new CustomEvent('escPressed'));
         }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [dispatch, canUndo, canRedo, isLoading, handleSave, fullyExpandedFoiId, handleCollapseFoi]);
+    }, [dispatch, canUndo, canRedo, isLoading, handleSave]);
 
   // --- Undo/Redo Handlers ---
   const handleUndo = useCallback(() => {
@@ -265,43 +344,97 @@ const App: React.FC = () => {
             <button onClick={handleUndo} title="Undo (Cmd+Z)" disabled={!canUndo} style={iconButtonStyle(canUndo)}>
                 <RotateCcw size={18} />
             </button>
-            {/* Search Bar - TODO: Update placeholder based on view */}
+            {/* Search Bar */}
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                 <Search size={16} style={{ position: 'absolute', left: '8px', color: '#777' }} />
-                <input
-                    type="text"
-                    placeholder={fullyExpandedFoiId ? `Search Programs in ${fullyExpandedFoiId}...` : "Search Fields of Interest..."} // Contextual placeholder
-                    value={searchTerm}
-                    onChange={handleSearchChange}
-                    style={searchInputStyle}
-                />
+            <input
+              type="text"
+              placeholder="Search..."
+              value={searchTerm}
+              onChange={handleSearchChange}
+              style={searchInputStyle}
+            />
             </div>
             {/* Save Button */}
             <button onClick={handleSave} title="Save Changes (Cmd+S)" disabled={!canUndo || isLoading} style={saveButtonStyle(canUndo && !isLoading)}>
                 <Save size={18} style={{ marginRight: '5px' }} /> Save
             </button>
+            <button onClick={() => setPopDialogOpen(true)} title="Import Population Data" style={saveButtonStyle(true)}>
+                Import Population
+            </button>
+            <button onClick={handleShowFoiTable} title="Reset FOIs without programs and show table" style={saveButtonStyle(true)}>
+                Show FOI Programs
+            </button>
+            <button onClick={handleExportToWord} title="Export FOI to Word" style={saveButtonStyle(true)}>
+                Export FOI to Word
+            </button>
          </div>
       </div>
       {/* --- End Top Bar --- */}
+      {isPopDialogOpen && (
+        <div style={modalOverlayStyle}>
+          <div style={modalContentStyle}>
+            <h3>Import Population Data</h3>
+            <textarea
+              placeholder="Paste the population table here..."
+              value={popText}
+              onChange={e => setPopText(e.target.value)}
+              style={{ width: '100%', height: '200px', fontFamily: 'inherit', fontSize: '14px' }}
+            />
+            <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button onClick={() => setPopDialogOpen(false)}>Cancel</button>
+              <button onClick={handlePopulationImport}>Import</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {isFoiTableDialogOpen && (
+        <div style={modalOverlayStyle}>
+          <div style={modalContentStyle}>
+            <div style={modalHeaderStyle}>
+              <h3 style={{ margin: 0 }}>FOI Population & Programs</h3>
+              <button onClick={() => setFoiTableDialogOpen(false)} style={closeButtonStyle}>
+                ×
+              </button>
+            </div>
+            <div style={tableContainerStyle}>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Rank</th>
+                    <th style={thStyle}>FOI</th>
+                    <th style={thStyle}>Programs</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {foiTableEntries.map((entry, idx) => (
+                    <tr key={entry.foiName}>
+                      <td style={tdStyle}>{idx + 1}</td>
+                      <td style={tdStyle}>{entry.foiName}</td>
+                      <td style={tdStyle}>{entry.programs.join('; ')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={modalFooterStyle}>
+              <button onClick={handleCopyTable}>Copy Table</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* --- Main Content Area --- */}
       <div style={{ ...mainAreaBaseStyle, ...dotGridBackground }}>
-          {fullyExpandedFoiId && fileData?.[fullyExpandedFoiId] ? (
-              // Render Fully Expanded FoI View
-              <ExpandedFoiView
-                foiId={fullyExpandedFoiId}
-                onCollapse={handleCollapseFoi}
-                searchTerm={searchTerm}
-              />
-          ) : fileData ? (
-              // Render FoI Graph View
-              <FoIGraph searchTerm={searchTerm} onExpandClick={handleExpandFoi} />
-          ) : (
-              // Render Loading/No Data messages
-              <div style={{ padding: '20px', textAlign: 'center' }}>
-                  {!isLoading && !error && <div>No data loaded. Waiting for file selection...</div>}
-              </div>
-          )}
+        {fileData ? (
+          <CollapsibleCardsView searchTerm={searchTerm} />
+        ) : (
+          <div style={{ padding: '20px', textAlign: 'center' }}>
+            {!isLoading && !error && (
+              <div>No data loaded. Waiting for file selection...</div>
+            )}
+          </div>
+        )}
       </div>
       {/* --- End Main Content Area --- */}
     </div>
@@ -357,6 +490,66 @@ const dotGridBackground: React.CSSProperties = {
     backgroundColor: '#FAF8F0', // Paler graph background
     backgroundImage: 'radial-gradient(#E0E0E0 1px, transparent 1px)', // Slightly less prominent dots
     backgroundSize: '18px 18px', // Slightly larger grid
+};
+const modalOverlayStyle: React.CSSProperties = {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+};
+
+const modalContentStyle: React.CSSProperties = {
+    backgroundColor: '#fff',
+    borderRadius: '8px',
+    padding: '20px',
+    width: '500px',
+    maxWidth: '90%',
+    boxShadow: '0px 4px 20px rgba(0,0,0,0.2)',
+    display: 'flex',
+    flexDirection: 'column',
+    maxHeight: '80vh',
+};
+
+const tableStyle: React.CSSProperties = {
+  width: '100%',
+  borderCollapse: 'collapse',
+};
+const thStyle: React.CSSProperties = {
+  borderBottom: '1px solid #ccc',
+  textAlign: 'left',
+  padding: '4px',
+};
+const tdStyle: React.CSSProperties = {
+  borderBottom: '1px solid #eee',
+  padding: '4px',
+  verticalAlign: 'top',
+};
+const modalHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+};
+const closeButtonStyle: React.CSSProperties = {
+  background: 'none',
+  border: 'none',
+  fontSize: '1.2em',
+  cursor: 'pointer',
+};
+const tableContainerStyle: React.CSSProperties = {
+  overflowY: 'auto',
+  flex: '1 1 auto',
+  marginTop: '10px',
+};
+const modalFooterStyle: React.CSSProperties = {
+  marginTop: '10px',
+  display: 'flex',
+  justifyContent: 'flex-end',
 };
 
 export default App;

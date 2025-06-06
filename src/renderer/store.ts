@@ -55,6 +55,11 @@ export interface MoveProgramPayload {
     targetFoiName: string;
     programId: string; // Link
 }
+export interface PopulationUpdate {
+  foiName: string;
+  count: number;
+  as_of: string;
+}
 
 const appSlice = createSlice({
   name: 'app',
@@ -152,13 +157,27 @@ const appSlice = createSlice({
             console.warn(`Source or target FoI not found for moving program ${programId}. Source: ${sourceFoiName}, Target: ${targetFoiName}`);
         }
     },
+    updatePopulations: (state, action: PayloadAction<PopulationUpdate[]>) => {
+      const updates = action.payload;
+      if (!state.fileData) {
+        console.warn('Attempted to update populations with no file data loaded.');
+        return;
+      }
+      for (const { foiName, count, as_of } of updates) {
+        if (!state.fileData[foiName]) {
+          state.fileData[foiName] = { included: true, population: { count, as_of }, programs: [] };
+        } else {
+          state.fileData[foiName].population = { count, as_of };
+        }
+      }
+    },
   },
 });
 
 // Export actions including the new one
 export const {
     setLoading, setError, setStatusMessage, setFilePath, setFileData,
-    updateFoiIncluded, updateProgramIncluded, updateProgramDetails, moveProgram
+    updateFoiIncluded, updateProgramIncluded, updateProgramDetails, moveProgram, updatePopulations
 } = appSlice.actions;
 
 // List of action types to exclude from undo history

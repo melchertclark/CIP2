@@ -1,6 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import { spawn } from 'child_process';
+import * as os from 'os';
 
 let mainWindow: BrowserWindow | null = null;
 let currentFilePath: string | null = null;
@@ -289,6 +291,46 @@ ipcMain.handle('save-file', async (_event, content: string) => {
     const errorMessage = `Error saving file: ${targetPath}. ${error.message || 'Unknown error'}`;
     return { canceled: false, error: errorMessage };
   }
+});
+
+ipcMain.handle('export-to-word', async (_event, entries: any[]) => {
+  if (!mainWindow) {
+    return { canceled: true, error: 'Main window not available.' };
+  }
+  let outputPath: string;
+  if (currentFilePath) {
+    const dir = path.dirname(currentFilePath);
+    const dateStr = new Date().toISOString().slice(0, 10);
+    outputPath = path.join(dir, `FOI Population Programs ${dateStr}.docx`);
+  } else {
+    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+      title: 'Save FOI Population Programs',
+      defaultPath: 'FOI Population Programs.docx',
+      filters: [{ name: 'Word Document', extensions: ['docx'] }]
+    });
+    if (canceled || !filePath) {
+      return { canceled: true };
+    }
+    outputPath = filePath;
+  }
+  const tmpJson = path.join(os.tmpdir(), `foi_entries_${Date.now()}.json`);
+  await fs.writeFile(tmpJson, JSON.stringify(entries, null, 2), 'utf-8');
+  const scriptPath = path.join(app.getAppPath(), 'make_foi_table_doc.py');
+  return new Promise(resolve => {
+    const args = [scriptPath, tmpJson, outputPath];
+    if (currentFilePath) {
+      args.push(currentFilePath);
+    }
+    const proc = spawn('python3', args, { stdio: 'inherit' });
+    proc.on('error', (err) => resolve({ canceled: false, error: err.message }));
+    proc.on('exit', (code) => {
+      if (code === 0) {
+        resolve({ canceled: false, outputPath });
+      } else {
+        resolve({ canceled: false, error: `Python script exited with code ${code}` });
+      }
+    });
+  });
 });
 
 app.on('activate', () => {

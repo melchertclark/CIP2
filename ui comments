@@ -1,0 +1,76 @@
+Okay, here is a debugging and UI/UX recommendation document based on the provided repository information and the video walkthrough.
+
+CIP2 Debugging & UI/UX Recommendations (v1.2 Analysis)
+Document Purpose: This document analyzes the CIP2 application based on the provided code repository (including PRD, progress notes) and the video cip2-walkthrough.mp4. It identifies potential bugs, inconsistencies with the PRD, and suggests UI/UX refinements to improve usability and align closer with the "Light Academia Minimalism" goal.
+
+Overall Status: The application implements a significant portion of the PRD features. Core functionality like file loading, graph rendering, card expansion (partial/full), basic inline editing, toggling, and saving appears functional. However, several UI/UX aspects need refinement, and at least one critical bug related to the quit process was observed.
+
+1. Critical Bugs & Major Issues
+Save-on-Close Prompt Failure:
+Observation: In the video (approx. 0:18-0:48), the user modifies data (toggles inclusion on FoI cards) and successfully saves. However, when attempting to close the application later (1:02), the "Save changes before closing?" prompt does not appear, even though changes were made before the last save. It should only skip the prompt if no changes were made since the last save.
+PRD Ref: 5.1 (Save on Close), 9.1 (Dirty State Tracking)
+Potential Cause: The isDirty state might not be correctly reflecting the state since the last save, or the check during the before-quit event in main.ts might be reading a stale isDirty value, or the successful handleSave in App.tsx isn't correctly communicating the clean state back before the quit check completes. The setDirty(false) dispatch on save seems correct in the code, but the end-to-end flow is failing.
+Recommendation: CRITICAL FIX: Thoroughly debug the isDirty state management within Redux (store.ts), the handleSave function (App.tsx), and the IPC communication for the before-quit sequence (main.ts, preload.ts, App.tsx). Ensure the isDirty state accurately reflects whether changes exist since the last successful save. Verify the timing of IPC messages and state updates during the quit sequence.
+Information Density & Card Scaling:
+Observation: Both FoI and Program cards appear disproportionately large relative to the text content they display, especially in their minimal and partial states (Video 0:13 onwards). This leads to a very sparse layout in both graph views, requiring significant zooming/panning (implicitly shown by the large viewBox needed) and doesn't feel "minimalist". Text often occupies only a small central portion of the card.
+PRD Ref: 6.1 (Visual Style: Light Academia Minimalism, emphasize typography, whitespace), 5.3 (FoI Card), 5.5 (Program Card). While the PRD doesn't give pixel values, the visual result deviates from the minimalist goal.
+Code Ref: FoiCard.tsx defines MINIMAL_WIDTH = 360, PARTIAL_WIDTH = 560, etc. ProgramCard.tsx defines even larger sizes (MINIMAL_WIDTH = 720, etc.).
+Recommendation: MAJOR UI FIX:
+Drastically reduce the MINIMAL_WIDTH, MINIMAL_HEIGHT, PARTIAL_WIDTH, PARTIAL_HEIGHT constants in both FoiCard.tsx and ProgramCard.tsx (e.g., try halving them as a starting point).
+Adjust internal font sizes and padding within the cards (foiNameStyle, programNameStyle, etc.) to be appropriately scaled after resizing the cards, ensuring readability.
+Re-tune D3 collision forces (d3.forceCollide) in FoIGraph.tsx and ProgramGraph.tsx to use the new, smaller card dimensions.
+Consider changing the forceManyBody strength to be repulsive (negative value, e.g., -100 to -500) instead of attractive (+5) to push nodes apart naturally, likely improving layout density. Adjust forceCenter, forceX, forceY strengths as needed for the new scale.
+2. UI/UX Refinements & Suggestions
+Animation Consistency & Polish:
+Observation: FoI card expansion/collapse seems animated (via GSAP in FoiCard.tsx). Program card transitions (minimal -> partial -> full) appear more abrupt in the video (0:27-0:28, 0:33-0:34), suggesting GSAP might not be fully implemented or consistently applied there.
+PRD Ref: 5.3, 5.5 (Smoothly Animated), 6.1 (Engaging user experience), 7.2 (GSAP recommended).
+Code Ref: ProgramCard.tsx lacks the useEffect hook with gsap.to(...) seen in FoiCard.tsx.
+Recommendation: Implement GSAP animations consistently for all state transitions (size, opacity, position if applicable) in ProgramCard.tsx, mirroring the setup in FoiCard.tsx. Ensure easing (ease: 'power2.inOut') and duration (duration: 0.3) are applied as per PRD defaults.
+Visual Feedback for Inline Editing:
+Observation: When fields become editable in the fully expanded program card (Video 0:37 - implicitly, as no editing happens), the PRD specifies a minimal style change (subtle background/border). The current implementation uses standard inputs which might look slightly out of place.
+PRD Ref: 5.5 (Editable Text Fields: styled minimally, subtle background highlight or border on focus).
+Code Ref: ProgramCard.tsx uses standard <input> and <textarea> elements. Styles inlineInputStyle, inlineTextAreaStyle.
+Recommendation: Refine the CSS for inlineInputStyle and inlineTextAreaStyle. On focus (:focus pseudo-class), apply a subtle background color change (e.g., a slightly lighter beige) or a thin border color change instead of the default browser outline, aligning closer to the minimalist aesthetic. Ensure the isLinkInvalid red border is distinct.
+Search Highlighting Implementation:
+Observation: The HighlightText.tsx component exists and is used, but it's unclear from the video if highlighting is active within partially/fully expanded cards (e.g., in the description field).
+PRD Ref: 5.6 (Feedback: Highlight matched substring within visible cards' text).
+Recommendation: Verify that <HighlightText> is correctly wrapping the relevant text content (name, description) in all visible states of both FoiCard.tsx and ProgramCard.tsx. Ensure the <mark> styling (background: '#FFD700') is applied.
+FoI Card Internal Layout (Partial State):
+Observation: In the partially expanded FoI card (Video 0:15-0:17), the Program Count and Population info seem somewhat basic.
+PRD Ref: 5.3 State 2 (Specifies text format like "15 Programs", "Population: 132,065 (<span style='color: grey;'>as of 2025-04-25</span>)").
+Recommendation: Review the rendering logic in FoiCard.tsx for the partial state. Ensure the text formatting precisely matches the PRD example, including the grey span for the "as of" date. Improve vertical spacing and alignment if needed after card resizing.
+Program Card Internal Layout (Full State):
+Observation: The fully expanded Program card layout (Video 0:35) looks functional but could be refined for better alignment and spacing.
+PRD Ref: 5.5 State 3, 6.1 (Visual Style).
+Code Ref: ProgramCard.tsx styles (fullContentStyle, fieldRowStyle, fieldLabelStyle, etc.).
+Recommendation: After resizing cards (Major Issue #2), review the padding, gaps, label widths (fieldLabelStyle width), and alignment within the fully expanded ProgramCard. Ensure consistent spacing and clear visual hierarchy for editable fields and the dropdown.
+3. Minor Issues & Inconsistencies
+FoI Card Collapse on Background Click:
+Observation: Clicking the FoI graph background collapses any partially expanded FoI card (Video 0:18-0:19).
+PRD Ref: 5.3 Interaction: "Click outside this card -> Minimal state." (Emphasis added). The current behavior collapses any active card on any background click.
+Code Ref: FoIGraph.tsx handleBackgroundClick calls setActiveCardId(null). The click handler is on the main container div.
+Recommendation: Modify the click handling. The background click should likely still collapse the active card, but the PRD implies interaction outside the specific card's bounds should trigger its collapse. The current implementation achieves a similar outcome but isn't strictly as specified. Consider if the current simpler implementation is acceptable, or if precise "click outside this card" logic is required (which is more complex to implement in SVG/D3). The current behavior is arguably more intuitive. Decision Point: Confirm if current behavior is acceptable or if strict PRD adherence is needed.
+Escape Key Handling Specificity:
+Observation: The Escape key correctly collapses the fully expanded FoI view. The code attempts to signal graph components to handle Esc for card collapse using a generic escPressed event (App.tsx).
+PRD Ref: 184 (Consider basic keyboard navigation - Tabbing, Esc).
+Code Ref: App.tsx dispatches escPressed event. FoIGraph.tsx and ProgramGraph.tsx listen for it.
+Recommendation: While the event works, it's not context-aware. App.tsx fires it regardless of which view (FoI or Program graph) is active. This might lead to unintended collapses if not handled carefully. A more robust solution might involve passing onEscape callback props down or using React Context to manage focus and Esc behavior more precisely. For now, confirm the current event listener logic in both graph components correctly handles the LIFO/active card collapse without side effects.
+4. Code & Project Structure Notes
+Duplicate Validation Logic:
+Observation: There is validation logic in src/main.ts (validateCIP2DataStructure) which seems to be correctly used during file load. There is also a src/renderer/validate.ts file with a similar function (validateCIP2Data).
+Recommendation: Verify if src/renderer/validate.ts is actually used. If not (as seems likely, since validation happens in main), remove it to avoid confusion and code duplication.
+GSAP Usage in ProgramCard:
+Observation: GSAP is listed as a dependency and used in FoiCard.tsx but appears missing from ProgramCard.tsx's animation logic.
+Recommendation: Ensure GSAP is correctly imported and utilized in ProgramCard.tsx for smooth transitions as intended (See UI/UX Refinement #1).
+5. Summary & Next Steps
+Priority 1 (Bug Fix): Address the Save-on-Close Prompt Failure. This is critical for data integrity.
+Priority 2 (Major UI): Implement the Information Density & Card Scaling recommendations. This significantly impacts usability and the core visual experience. Re-tune D3 forces accordingly.
+Priority 3 (Refinements):
+Implement consistent GSAP Animations in ProgramCard.tsx.
+Refine Inline Editing styles and Search Highlighting.
+Polish Card Internal Layouts (FoI Partial, Program Full).
+Priority 4 (Minor Issues/Cleanup):
+Decide on/clarify the intended FoI Card Collapse behavior.
+Test Escape Key handling thoroughly.
+Remove the potentially Duplicate Validation file.
+Addressing these points, particularly the critical bug and the card scaling, will bring the application much closer to the specified requirements and desired aesthetic.

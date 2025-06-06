@@ -3,7 +3,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('electronAPI', {
   saveFile: (content: string) => ipcRenderer.invoke('save-file', content),
   sendQuitResponse: (response: { isDirty: boolean }) => ipcRenderer.send('quit-response', response),
-  sendSaveComplete: () => ipcRenderer.send('save-file-complete'),
+            sendSaveComplete: () => ipcRenderer.send('save-file-complete'),
+            exportToWord: (entries: any[]) => ipcRenderer.invoke('export-to-word', entries),
   onFileLoading: (callback: (isLoading: boolean) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, isLoading: boolean) => callback(isLoading);
     ipcRenderer.on('file-loading', handler);
@@ -45,6 +46,7 @@ declare global {
             onBeforeQuitRequest: (callback: () => void) => () => void;
             onRequestSave: (callback: () => void) => () => void;
             sendSaveComplete: () => void;
+            exportToWord: (entries: any[]) => Promise<{ canceled?: boolean; outputPath?: string; error?: string }>;
         }
     }
 }
